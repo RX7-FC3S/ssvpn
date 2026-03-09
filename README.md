@@ -48,7 +48,7 @@ vim .bashrc
 
 ```bash
 export CF_Email="example@gmail.com"
-export CF_key="***"
+export CF_Key="***"
 ```
 
 3. Register your acme.sh account
