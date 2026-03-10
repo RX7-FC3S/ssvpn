@@ -1,94 +1,160 @@
-# Shadowsocks with v2ray-plugin
+# Shadowsocks with v2ray-plugin and Nginx
 
-This project uses Shadowsoks and v2ray-plugin to build a proxy server on Linux. ( The following installation and usage instructions are based on Ubuntu 20.04)
+This project demonstrates how to build a proxy server on Linux using **Shadowsocks-libev** with **v2ray-plugin** and **Nginx**.
+> The following installation and usage instructions are based on Ubuntu 20.04
 
 # Installation & Usage
-### Install shadowsocks-libev
-
+## 1. Install and Configure Shadowsocks
+### 1.1 Install shadowsocks-libev
 ```bash
+apt update
 apt install shadowsocks-libev
 ```
 
-### Edit the configuration:
+### 1.2 Configure shadowsocks
+Edit the configuration file:
 ```bash
 vim /etc/shadowsocks-libev/config.json
 ```
-- Set the "server" to "0.0.0.0", which allows all clients to connect to this server.
-- Replace the "password" with a memberable one.
+
+Set "server" to "127.0.0.1" to allow only local access (from Nginx):
 ```json
 {
-  "server": "0.0.0.0",
+  "server": "127.0.0.1",
   "mode": "tcp_and_udp",
   "server_port": 8388,
   "local_port": "1080",
-  "password": "***",
+  "password": "your_password",
   "timeout": "86400",
-  "method": "chacha20-ietf-poly1305"
+  "method": "chacha20-ietf-poly1305",
+  "plugin": "v2ray-plugin",
+  "plugin_opts": "server;host=yourdomain.com;path=/your_path;"
 }
 ```
 
-### Make v2ray-plugin executable
+## 2. Install v2ray-plugin
+Download the binary and move it to the system path:
 ```bash
 chmod +x v2ray-plugin
+mv v2ray-plugin /usr/bin/
 ```
 
-### Issue a SSL certificate
-v2ray-plugin uses TLS to encrypt the network flow, so you need a SSL certificate. You can use the .acme.sh to do this, and it is free.
+## 3. Issue an TLS certificate
+`v2ray-plugin` uses TLS to encrypt network traffic, so an TLS certificate is required. You can obtain a free certificate using `acme.sh` with the **Cloudflare DNS API**.
 
-1. Install acme.sh
+### 3.1 Install acme.sh
 ```bash
 curl https://get.acme.sh | sh
 ```
 
-2. Add environment variables
-
+### 3.2 Add environment variables
+Edit `.bashrc`:
 ```bash
-vim .bashrc
+vim ~/.bashrc
 ```
 
+Add the following variables for **Cloudflare DNS API**:
 ```bash
-export CF_Email="example@gmail.com"
-export CF_Key="***"
+export CF_Email="yourdomain@mail.com"
+export CF_Key="***" # Global API Key
 ```
 
-3. Register your acme.sh account
-
+Reload the environment:
 ```bash
-acme.sh --register-account -m example@gmail.com
+source ~/.bashrc
 ```
 
-4. Issue the certificate
-
+### 3.3 Register an acme.sh account
 ```bash
-acme.sh  --issue --dns dns_cf -d yourdomain.com
+acme.sh --register-account -m yourdomain@mail.com
 ```
 
-5. Find ca files in .acme.sh/yourdomain.com_ecc
+### 3.4 Issue the certificate
+```bash
+acme.sh --issue --dns dns_cf -d yourdomain.com
+```
 
+After issuing the certificate, the files will be located in:
+```
+~/.acme.sh/yourdomain.com_ecc/
+```
 
-## Edit the startup script
+## 4. Install and configure Nginx
+### 4.1 Install Nginx:
+```bash
+apt install nginx -y
+```
+
+### 4.2 Create a configuration file:
+```bash
+vim /etc/nginx/conf.d/yourdomain.com.conf
+```
+
+Example configuration:
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+
+    ssl_certificate /root/.acme.sh/yourdomain.com_ecc/yourdomain.com.cer;
+    ssl_certificate_key /root/.acme.sh/yourdomain.com_ecc/yourdomain.com.key;
+
+    root /var/www/html;
+    index index.html index.htm;
+
+    # Disable directory scanning
+    location ~ /\. {
+        deny all;
+    }
+
+    location /your_path {
+        if ($http_upgrade != "websocket") {
+            return 404;
+        }
+
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8388;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+### 4.3 Validate the configuration and reload Nginx
+Before applying the configuration, verify that the Nginx configuration file is valid:
+
+```bash
+nginx -t
+```
+
+If the test passes, reload Nginx to apply the changes:
+```bash
+nginx -s reload
+```
+
+## 5. Create `startup.sh` and run
+Example `startup.sh`:
 ```bash
 #!/bin/bash
-
-SS_CONFIG="/etc/shadowsocks-libev/config.json"
-
-HOST="yourdomain.com"
-PORT=443
-
-CER_PATH="../.acme.sh/yourdomain.com_ecc/yourdomain.com.cer"
-KEY_PATH="../.acme.sh/yourdomain.com_ecc/yourdomain.com.key"
-
-LOG_FILE="./ssv.log"
-
-# You don't have to eidt the following code.
-PLUGIN="./v2ray-plugin"
-PLUGIN_OPTS="server;tls;host=$HOST;cert=$CER_PATH;key=$KEY_PATH"
-...
+nohup ss-server -c "/etc/shadowsocks-libev/config.json" > /dev/null 2>&1 &
 ```
-## Run the startup.sh 
+
+Run `startup.sh`:
 ```bash
 chmod +x startup.sh
 ./startup.sh
 ```
 
+## Note:
+- Replace your_password with a secure password.
+- Replace yourdomain.com with your actual domain.
+- Reloace yourdomain@mail.com with your actual eamil address.
+- Replace /path with the WebSocket path used by v2ray-plugin.
 
