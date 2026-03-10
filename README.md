@@ -1,4 +1,6 @@
-# Shadowsocks with v2ray-plugin and Nginx
+# ssvpn
+
+**ssvpn** stands for **Shadowsocks with v2ray-plugin and Nginx**.
 
 This project demonstrates how to build a proxy server on Linux using **Shadowsocks-libev** with **v2ray-plugin** and **Nginx**.
 > The following installation and usage instructions are based on Ubuntu 20.04
